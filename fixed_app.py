@@ -65,6 +65,48 @@ def sidebar_layout(df):
     
     return split_size, selected_model, model_params, user_input, feature_columns
 
+def plot_feature_importance(model, feature_names, model_name, X_val, y_val):
+    """
+    Plot feature importance bar chart
+    """
+    importances = None
+    
+    # 1. Decision Tree (has built-in feature_importances_)
+    if model_name == "Decision Tree":
+        if hasattr(model, 'feature_importances_'):
+            importances = model.feature_importances_
+
+    # 2. Logistic Regression / Linear SVM (use coef_ coefficients)
+    elif model_name == "Logistic Regression" or model_name == "SVM":
+        if hasattr(model, 'coef_'):
+            # Take absolute value, as negative coefficients also indicate strong correlation (negative correlation)
+            importances = np.abs(model.coef_[0])
+            
+    # 3. KNN or non-linear SVM (no built-in importance, use Permutation Importance for universal calculation)
+    #    Note: This requires sklearn.inspection
+    if importances is None:
+        from sklearn.inspection import permutation_importance
+        # This is a universal method that judges importance by seeing how much accuracy drops when feature order is shuffled
+        # X_val here needs to be standardized data
+        result = permutation_importance(model, X_val, y_val, n_repeats=10, random_state=42)
+        importances = result.importances_mean
+
+    # --- Plotting logic ---
+    # Create DataFrame
+    feature_imp = pd.DataFrame({'Feature': feature_names, 'Importance': importances})
+    # Sort by importance in descending order
+    feature_imp = feature_imp.sort_values(by='Importance', ascending=False).head(10) # Only show top 10
+
+    # Use Seaborn for plotting
+    fig, ax = plt.subplots(figsize=(8, 6))
+    sns.barplot(x='Importance', y='Feature', data=feature_imp, palette='viridis', ax=ax)
+    
+    plt.title(f'Feature Importance Analysis ({model_name})')
+    plt.xlabel('Importance Score')
+    plt.ylabel('Medical Feature')
+    
+    return fig
+
 def main():
     try:
         st.title("🩺 Breast Cancer Prediction System")
@@ -149,6 +191,23 @@ def main():
             plt.title('ROC Curve')
             plt.legend(loc="lower right")
             st.pyplot(fig_roc)
+
+        st.write("---")
+        st.subheader("🔍 3. Model Interpretability (Feature Importance)")
+        st.markdown("This chart shows which medical features the model considers most critical when determining 'Benign/Malignant'.")
+
+        # Call the function we just wrote
+        # Note: X_test_scaled (standardized test data) is passed here for KNN/SVM universal calculation
+        fig_imp = plot_feature_importance(clf, df.columns[:-1], model_name, X_test_scaled, y_test)
+        
+        st.pyplot(fig_imp)
+        
+        # Add interpretation text
+        st.info("""
+        **Chart Interpretation:**
+        - **Longer bars**: Indicate that the feature has a greater impact on the prediction results.
+        - **Medical significance**: For example, if `mean concave points` ranks first, it means the model considers this indicator the core basis for cancer diagnosis.
+        """)
 
         # 界面展示：预测功能部分
         st.divider()
